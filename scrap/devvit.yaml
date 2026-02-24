@@ -1,0 +1,13 @@
+name: podcastscrapper
+blocks:
+  entry: src/main.ts
+permissions:
+  - posts
+  - comments
+  - read
+  - modposts  
+  - schedule
+scheduler:
+  jobs:
+    - name: processAllSuggestionThreads
+      cron: "0 12 */2 * *"  # every 2 days at 12:00 UTC

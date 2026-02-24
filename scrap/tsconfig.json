@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",                  // modern JS target
+    "module": "ESNext",                  // use ES modules
+    "moduleResolution": "node",          // resolve node-style imports
+    "lib": ["ES2022"],                   // include ES2022 standard library
+    "strict": true,                      // enable strict type-checking
+    "esModuleInterop": true,             // allows import of CommonJS modules
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,                // skip type checking of node_modules
+    "outDir": "./dist",                  // optional: output folder for compiled JS
+    "rootDir": "./src"                   // source code folder
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}
