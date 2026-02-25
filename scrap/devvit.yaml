@@ -6,8 +6,21 @@ permissions:
   - comments
   - read
   - modposts  
-  - schedule
-scheduler:
-  jobs:
-    - name: processAllSuggestionThreads
-      cron: "0 12 */2 * *"  # every 2 days at 12:00 UTC
+  - submit
+  - http:
+      enable: true
+      domains:
+        - api.github.com
+allowExternal:
+  - eoyziuzxbs5ho1w.m.pipedream.net
+settings:
+  - name: GITHUB_TOKEN
+    label: GitHub Token
+    type: string
+    scope: installation
+    secret: true
+
+  - name: GITHUB_REPO
+    label: GitHub Repo (owner/repo)
+    type: string
+    scope: installation
