@@ -111,9 +111,8 @@ async function pushTopCommentToGitHub(context: any, data: any) {
     const repo = await context.settings.get("GITHUB_REPO");
     if (!token || !repo) throw new Error("Settings GitHub manquants.");
 
-    const filename = "top_comment.json";
-    const filepath = "contents/" + filename; // chemin exact dans ton repo
-    const branch = "main";
+    const filepath = "scrap/contents/top_comment.json";
+    const branch = "dev";
     const url = `https://api.github.com/repos/${repo}/contents/${filepath}?ref=${branch}`;
     const content = Buffer.from(JSON.stringify(data, null, 2)).toString("base64");
 
