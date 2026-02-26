@@ -17,7 +17,7 @@ async function getWinningSubject() {
         console.log(`Sujet : "${commentData.body}"`);
         console.log(`Score : ${commentData.score}`);
 
-        return commentData.body;
+        return commentData;
 
     } catch (error) {
         console.error("❌ Erreur : Impossible de lire le fichier JSON sur GitHub.");

@@ -7,10 +7,12 @@ const { pushAudioToGitHub } = require('./github/gitPusher'); // Import du nouvea
 async function runPipeline() {
     console.log("🚀 Lancement du Podcast Generator...");
 
-    const subject = await getWinningSubject();
-    if (!subject) return;
+    // On récupère tout l'objet
+    const commentData = await getWinningSubject();
+    if (!commentData || !commentData.body) return;
 
-    const script = await generatePodcastScript(subject);
+    // On passe le texte ET l'auteur à l'IA
+    const script = await generatePodcastScript(commentData.body, commentData.author);
 
     if (script) {
         console.log("\n--- SCRIPT COMPLET ---");
