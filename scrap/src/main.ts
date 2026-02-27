@@ -1,4 +1,4 @@
-import { Devvit, SettingScope } from "@devvit/public-api";
+import { Devvit, FlairTemplate, SettingScope } from "@devvit/public-api";
 
 // Activation API Reddit et HTTP fetch
 Devvit.configure({
@@ -6,7 +6,7 @@ Devvit.configure({
   http: true,
 });
 
-// Déclare les settings utilisés par ton app
+// Déclaration des paramètre utilsé par l'app
 Devvit.addSettings([
   {
     name: "GITHUB_TOKEN",
@@ -23,36 +23,82 @@ Devvit.addSettings([
   },
 ]);
 
+
 /* ============================================================
-   CREATE GENERIC POST
+   Envoyer le podcast final 
 ============================================================ */
-async function createGenericPost(context: any) {
+async function sendFinalPodcast(context: any) {
+
+  //Accès au github
   try {
-    const subredditName = context.subredditName;
-    if (!subredditName) {
-      context.ui.showToast("Impossible de déterminer le subreddit actuel !");
+    const token = await context.settings.get("GITHUB_TOKEN");
+    const repo = await context.settings.get("GITHUB_REPO");
+    if (!token || !repo) throw new Error("Settings GitHub manquants.");
+
+    const filepath = "scrap/contents/top_comment.json";
+    const branch = "dev";
+    const url = `https://api.github.com/repos/${repo}/contents/${filepath}?ref=${branch}`;
+
+    const res = await fetch(url, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+    });
+
+    if (!res.ok) throw new Error("Impossible de récupérer le top comment.");
+
+    // Récupération et décodage du top_comment.json
+    const fileData = await res.json() as {
+      content: string;
+      sha: string;
+    };
+
+    const content = Buffer.from(fileData.content, "base64").toString("utf-8");
+    const topComment = JSON.parse(content);
+
+    console.log("Top comment décodé complet:", topComment);
+
+    if (!topComment?.id) throw new Error("Commentaire invalide.");
+
+    // Vérification subreddit
+    const currentSubreddit = context.subredditName;
+    const match = topComment.permalink?.match(/^\/r\/([^/]+)\//);
+
+    if (!match) {
+      console.error("Impossible d'extraire le subreddit");
       return;
     }
 
-    const post = await context.reddit.submitPost({
-      subredditName,
-      title: "💡 Nouveau post générique",
-      text: "Ceci est un post généré automatiquement pour le test.",
+    const commentSubreddit = match[1];
+
+    if (commentSubreddit !== currentSubreddit) {
+      context.ui.showToast("❌ Ce commentaire appartient à un autre subreddit.");
+      return;
+    }
+
+    // ✅ ENVOI FINAL
+    await context.reddit.submitComment({
+      id: topComment.id,
+      text:
+        `🎧 Salut u/${topComment.author} ! Ton podcast est prêt !\n\n` +
+        `[▶️ Écouter l'épisode ici](https://raw.githubusercontent.com/MamatorHack/podcast-generator/dev/voice-generator/podcast_final.mp3)`,
     });
 
-    console.log("✅ Post créé :", post.id);
-    context.ui.showToast(`Post créé : ${post.title}`);
-    return post;
+    context.ui.showToast("🎙 Podcast envoyé !");
   } catch (err) {
-    console.error("❌ Erreur création post :", err);
-    context.ui.showToast("Erreur lors de la création du post.");
+    console.error("Erreur envoi podcast :", err);
+    context.ui.showToast("Erreur lors de l'envoi du podcast.");
   }
 }
 
 /* ============================================================
-   PROCESS TOP COMMENT
+   Récupération du top comment
 ============================================================ */
 async function processTopComment(context: any, postId: string) {
+  //Récupérer tout les commentaites d'un post
   try {
     const listing = await context.reddit.getComments({
       postId,
@@ -66,7 +112,7 @@ async function processTopComment(context: any, postId: string) {
       return null;
     }
 
-    // Trouver le commentaire avec le score le plus élevé
+    // Trouver le commentaire avec le score le plus élevé(upvote)
     let topComment = allComments[0];
     for (const c of allComments) {
       if ((c.score ?? 0) > (topComment.score ?? 0)) topComment = c;
@@ -94,6 +140,40 @@ async function processTopComment(context: any, postId: string) {
     // Push sur GitHub
     await pushTopCommentToGitHub(context, topCommentJSON);
 
+    
+
+    // Ajout du flair "Clôturé" 
+    // Si le flair n'a pas déjà été créé au préalable cela ne fonctionnera pas
+    const post = await context.reddit.getPostById(postId);
+    if (!post) return;
+
+    const subredditName = post.subredditName;
+    const flairLabel = "Clôturé"; // nom du flair exact
+    const flairs = await context.reddit.getPostFlairTemplates(subredditName);
+    const flair = flairs.find((f:FlairTemplate) => f.text.trim() === flairLabel);
+
+    if (!flair) {
+      console.log(`⚠️ Flair "${flairLabel}" non trouvé !`);
+    } else {
+      const flairId = flair.id;
+      console.log("Flair trouvé :", flairId);
+      
+      //Appliquer le flair
+      await context.reddit.setPostFlair({
+        subredditName,
+        postId,
+        flairTemplateId: flairId, // ⚠️ utiliser flairTemplateId
+      });
+
+      console.log("✅ Flair appliqué !");
+    }
+    //Verouillage du post
+    if (post) {
+      await post.lock();
+      context.ui.showToast("🔒 Post verrouillé. Votes terminés !");
+    }
+  
+
     return topCommentJSON;
   } catch (err) {
     console.error("❌ Erreur traitement top commentaire :", err);
@@ -103,16 +183,18 @@ async function processTopComment(context: any, postId: string) {
 }
 
 /* ============================================================
-   PUSH TOP COMMENT TO GITHUB
+  Envoyer le top comment sur github
 ============================================================ */
 async function pushTopCommentToGitHub(context: any, data: any) {
+  // Récupération du repo / token d'accès
   try {
     const token = await context.settings.get("GITHUB_TOKEN");
     const repo = await context.settings.get("GITHUB_REPO");
     if (!token || !repo) throw new Error("Settings GitHub manquants.");
-
+    // Chemin exacte du fichier à partir de la racine
     const filepath = "scrap/contents/top_comment.json";
     const branch = "dev";
+    // url complète du fichieren passant par api.github
     const url = `https://api.github.com/repos/${repo}/contents/${filepath}?ref=${branch}`;
     const content = Buffer.from(JSON.stringify(data, null, 2)).toString("base64");
 
@@ -162,18 +244,37 @@ async function pushTopCommentToGitHub(context: any, data: any) {
   }
 }
 
-/* ============================================================
-   DEVVIT MENU
-============================================================ */
-Devvit.addMenuItem({
-  label: "Créer un post générique",
-  location: "subreddit",
-  forUserType: "moderator",
-  onPress: async (_, context) => {
-    await createGenericPost(context);
+// Ajout d'un timer de 30 minutes
+Devvit.addSchedulerJob({
+  name: "podcast-job",
+  onRun: async (event, context) => {
+    if (!event.data || !("commentId" in event.data)) return;
+
+    const commentId = event.data.commentId as string;
+    const author = event.data.author as string;
+
+    try {
+      await context.reddit.submitComment({
+        id: commentId, // on répond au commentaire gagnant
+        text:
+          `🎧 Salut u/${author} ! Ton podcast est prêt !\n\n` +
+          `[▶️ Écouter l'épisode ici](https://raw.githubusercontent.com/MamatorHack/podcast-generator/dev/voice-generator/podcast_final.mp3)`,
+      });
+
+      console.log("🎙 Podcast posté sous le commentaire !");
+    } catch (err) {
+      console.error("Erreur scheduler :", err);
+    }
   },
 });
 
+
+
+/* ============================================================
+   DEVVIT MENU
+============================================================ */
+
+// Création d'un bouton permettant d'appeler: processTopComment() ; Location: On Post
 Devvit.addMenuItem({
   label: "Récupérer le commentaire le plus upvoté",
   location: "post",
@@ -186,5 +287,15 @@ Devvit.addMenuItem({
     await processTopComment(context, context.postId);
   },
 });
+
+Devvit.addMenuItem({
+  label: "Envoyer le podcast final",
+  location: "subreddit",
+  forUserType: "moderator",
+  onPress: async (_, context) => {
+    await sendFinalPodcast(context);
+  },
+});
+
 
 export default Devvit;
