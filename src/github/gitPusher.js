@@ -29,6 +29,12 @@ async function pushAudioToGitHub(filePath) {
         const date = new Date().toLocaleString('fr-FR').replace(/[: ]/g, '-');
         await runCommand(`git commit -m "🎙️ Auto-publication : Nouvel épisode généré par l'IA le ${date}"`, projectRoot);
 
+        // --- C'EST ICI QUE LA MAGIE OPÈRE ---
+        console.log(`⏳ Synchronisation avec le cloud (git pull)...`);
+        // Le script télécharge silencieusement les nouveautés du repo avant d'envoyer les tiennes
+        await runCommand(`git pull origin HEAD --rebase`, projectRoot);
+        // ------------------------------------
+
         console.log(`⏳ Envoi vers le repository distant...`);
         // 'HEAD' indique à Git de pousser sur la branche sur laquelle tu te trouves (ex: dev)
         const pushResult = await runCommand(`git push origin HEAD`, projectRoot);
@@ -38,8 +44,11 @@ async function pushAudioToGitHub(filePath) {
         return true;
 
     } catch (error) {
-        console.log(`\n⚠️ L'envoi a échoué. Vérifie que tu as bien les droits (SSH/Token) pour push sur le repo.`);
+        console.log(`\n⚠️ L'envoi a échoué. Détail de l'erreur : ${error.message}`);
         // Note : Si git dit "nothing to commit", c'est que le fichier est déjà sur GitHub et n'a pas été modifié.
+        if (error.message.includes('nothing to commit')) {
+            console.log(`👉 Le fichier audio est déjà à jour sur GitHub.`);
+        }
         return false;
     }
 }
